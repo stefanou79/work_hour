@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f6f4a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Work Hours</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17211b;background:#f4f6f4}
+*{box-sizing:border-box} body{margin:0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:620px;margin:auto;padding:16px}.card{background:white;border:1px solid #dfe5df;border-radius:16px;padding:16px;margin-bottom:14px}
+h1{font-size:28px;margin:8px 0 16px}h2{font-size:18px;margin:0 0 12px}
+label{display:block;font-size:14px;font-weight:600;margin:10px 0 5px}
+input,button{font:inherit;font-size:16px;min-height:46px;border-radius:10px}
+input{width:100%;padding:10px;border:1px solid #bfc9c1;background:white}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.total{background:#eef3ef;border-radius:12px;padding:12px;text-align:center}.total b{display:block;font-size:21px;margin-top:4px}
+.primary{width:100%;border:0;background:#1f6f4a;color:white;font-weight:700;margin-top:14px}
+.secondary{border:1px solid #bcc8be;background:white;padding:7px 10px}.danger{color:#9b2929}
+.entry{border-top:1px solid #e3e7e3;padding:12px 0}.entry:first-child{border-top:0}.entry-head{display:flex;justify-content:space-between;gap:8px}
+.entry-hours{font-weight:700}.note{color:#657068;font-size:14px;margin:4px 0 8px}.actions{display:flex;gap:8px;flex-wrap:wrap}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.muted{color:#68736b;font-size:13px}.msg{min-height:20px;color:#526057;font-size:14px}
+@media(max-width:380px){.totals{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>Work Hours</h1>
+
+<section class="card">
+<h2 id="formTitle">Add hours</h2>
+<form id="form">
+<label for="date">Date</label><input id="date" type="date" required>
+<div class="grid">
+<div><label for="start">Start time</label><input id="start" type="time"></div>
+<div><label for="end">End time</label><input id="end" type="time"></div>
+</div>
+<div class="grid">
+<div><label for="break">Break (minutes)</label><input id="break" type="number" min="0" max="1440" step="1" value="0"></div>
+<div><label for="hours">Hours worked</label><input id="hours" type="number" min="0.01" max="24" step="0.01" placeholder="e.g. 7.50" required></div>
+</div>
+<label for="note">Note (optional)</label><input id="note" maxlength="100" placeholder="Field work, analysis…">
+<button class="primary" id="save" type="submit">Save entry</button>
+<button class="secondary" id="cancel" type="button" hidden>Cancel edit</button>
+<p class="msg" id="msg" aria-live="polite"></p>
+</form>
+</section>
+
+<section class="card">
+<h2>Totals</h2>
+<div class="totals">
+<div class="total">This week<b id="week">0.00 h</b></div>
+<div class="total">This month<b id="month">0.00 h</b></div>
+<div class="total">All time<b id="all">0.00 h</b></div>
+</div>
+</section>
+
+<section class="card">
+<div class="toolbar"><h2>History</h2><button class="secondary" id="export" type="button">Export CSV</button></div>
+<div id="history" class="muted">No entries yet.</div>
+</section>
+<p class="muted">Your entries are stored locally in this browser on this device. Export a CSV occasionally as a backup.</p>
+</main>
+<script>
+(() => {
+const KEY="workHoursEntriesV1";
+const $=id=>document.getElementById(id);
+let entries=[], editing=null;
+try{entries=JSON.parse(localStorage.getItem(KEY)||"[]");if(!Array.isArray(entries))entries=[]}catch(e){entries=[]}
+const today=new Date(), pad=n=>String(n).padStart(2,"0");
+$("date").value=`${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+
+function calc(){
+ const s=$("start").value,e=$("end").value;
+ if(!s||!e)return;
+ let [sh,sm]=s.split(":").map(Number),[eh,em]=e.split(":").map(Number);
+ let mins=(eh*60+em)-(sh*60+sm); if(mins<0)mins+=1440;
+ mins-=Math.max(0,Number($("break").value)||0);
+ if(mins>=0)$("hours").value=(mins/60).toFixed(2);
+}
+["start","end","break"].forEach(id=>$(id).addEventListener("input",calc));
+function save(){localStorage.setItem(KEY,JSON.stringify(entries))}
+function parseDate(s){let [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)}
+function fmt(s){return parseDate(s).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}
+function weekStart(d){let x=new Date(d.getFullYear(),d.getMonth(),d.getDate()),day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x}
+function render(){
+ const now=new Date(), ws=weekStart(now), ms=new Date(now.getFullYear(),now.getMonth(),1);
+ const sum=f=>entries.filter(f).reduce((a,x)=>a+Number(x.hours),0);
+ $("all").textContent=sum(()=>true).toFixed(2)+" h";
+ $("month").textContent=sum(x=>parseDate(x.date)>=ms && parseDate(x.date)<=now).toFixed(2)+" h";
+ $("week").textContent=sum(x=>parseDate(x.date)>=ws && parseDate(x.date)<=now).toFixed(2)+" h";
+ const h=$("history");h.innerHTML="";
+ if(!entries.length){h.textContent="No entries yet.";h.className="muted";return}
+ h.className="";
+ [...entries].sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id).forEach(x=>{
+  const div=document.createElement("div");div.className="entry";
+  const head=document.createElement("div");head.className="entry-head";
+  const d=document.createElement("span");d.textContent=fmt(x.date);
+  const hrs=document.createElement("span");hrs.className="entry-hours";hrs.textContent=Number(x.hours).toFixed(2)+" h";
+  head.append(d,hrs);div.append(head);
+  if(x.start&&x.end){const t=document.createElement("div");t.className="muted";t.textContent=`${x.start} – ${x.end}${x.breakMin?` · ${x.breakMin} min break`:""}`;div.append(t)}
+  if(x.note){const n=document.createElement("div");n.className="note";n.textContent=x.note;div.append(n)}
+  const actions=document.createElement("div");actions.className="actions";
+  const edit=document.createElement("button");edit.type="button";edit.className="secondary";edit.textContent="Edit";
+  edit.addEventListener("click",()=>beginEdit(x.id));
+  const del=document.createElement("button");del.type="button";del.className="secondary danger";del.textContent="Delete";
+  del.addEventListener("click",()=>{if(confirm("Delete this entry?")){entries=entries.filter(e=>e.id!==x.id);save();render()}});
+  actions.append(edit,del);div.append(actions);h.append(div);
+ });
+}
+function resetForm(){
+ editing=null;$("form").reset();$("break").value=0;$("date").value=`${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+ $("formTitle").textContent="Add hours";$("save").textContent="Save entry";$("cancel").hidden=true;
+}
+function beginEdit(id){
+ const x=entries.find(e=>e.id===id);if(!x)return;editing=id;
+ $("date").value=x.date;$("start").value=x.start||"";$("end").value=x.end||"";$("break").value=x.breakMin||0;$("hours").value=x.hours;$("note").value=x.note||"";
+ $("formTitle").textContent="Edit entry";$("save").textContent="Update entry";$("cancel").hidden=false;window.scrollTo({top:0,behavior:"smooth"});
+}
+$("cancel").addEventListener("click",resetForm);
+$("form").addEventListener("submit",ev=>{
+ ev.preventDefault();let hours=Number($("hours").value);
+ if(!$("date").value||!Number.isFinite(hours)||hours<=0||hours>24){$("msg").textContent="Enter a valid date and hours between 0 and 24.";return}
+ const obj={id:editing||Date.now(),date:$("date").value,start:$("start").value,end:$("end").value,breakMin:Math.max(0,Number($("break").value)||0),hours,note:$("note").value.trim()};
+ if(editing)entries=entries.map(e=>e.id===editing?obj:e);else entries.push(obj);
+ save();resetForm();$("msg").textContent="Entry saved.";render();
+});
+$("export").addEventListener("click",()=>{
+ if(!entries.length){$("msg").textContent="Nothing to export yet.";return}
+ const esc=v=>'"'+String(v??"").replaceAll('"','""')+'"';
+ let csv="Date,Start,End,Break minutes,Hours,Note\n"+[...entries].sort((a,b)=>a.date.localeCompare(b.date)).map(x=>[x.date,x.start,x.end,x.breakMin,x.hours,x.note].map(esc).join(",")).join("\n");
+ const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download="work-hours.csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+render();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body></html>
